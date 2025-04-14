@@ -21,7 +21,7 @@ public class PlanetPosition {
     private int secondsInSign;
     private int houseNumber;
     public PlanetPosition(){}
-    public PlanetPosition(int planet_id, double[] xx) {
+    public PlanetPosition(int planet_id, double[] xx, double[] houseCusps) {
         this.planet_id=planet_id;
         this.planet_name= new  SwissEph().swe_get_planet_name(planet_id);
         this.longitude = xx[0];
@@ -35,6 +35,12 @@ public class PlanetPosition {
         this.degreesInSign = (int) (longitude % 30);
         this.minutesInSign = (int) ((longitude % 1) * 60);
         this.secondsInSign = (int) ((((longitude % 1) * 60) % 1) * 60);
+        for(int i =1; i<=12; i++){
+            if(i==12 || (this.longitude>houseCusps[i] && this.longitude<houseCusps[i+1])){
+                this.houseNumber=i;
+                break;
+            }
+        }
     }
 
     public int getPlanet_id() {

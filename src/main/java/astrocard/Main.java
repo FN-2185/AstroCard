@@ -3,9 +3,9 @@ import swisseph.SweDate;
 import swisseph.SwissEph;
 import java.time.*;
 import java.time.zone.ZoneRulesProvider;
+import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
-
 
 public class Main {
     public static void main(String[] args) {
@@ -18,6 +18,13 @@ public class Main {
                     " "+entry.getValue().getMinutesInSign()+" "+entry.getValue().getMinutesInSign()+
                     " House:"+ entry.getValue().getHouseNumber()+" Speed:"+ entry.getValue().getSpeedLongitude());
         }
-
+        Map<Integer, ZodiacSign> map1 = natalChart.getHousePositionInZodiacSign();
+        for (Map.Entry<Integer, ZodiacSign> entry1: map1.entrySet()){
+            System.out.println(entry1.getKey()+ " Sign:"+ entry1.getValue());
+        }
+        List<Aspect> list = natalChart.getAspectList();
+        for (Aspect aspect : list){
+            System.out.println(aspect.getFirstPlanetId()+" "+aspect.getSecondPlanetId()+" "+ aspect.getAngle());
+        }
     }
 }

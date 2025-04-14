@@ -49,15 +49,10 @@ public class NatalChartService {
         double [] houseLongBegin = natalChart.getHouseCusps();
         for(CelestialObject obj : CelestialObject.values()){
             int planetIndex = obj.getSwissephId();
-            natalChart.getPlanetPositions().put(planetIndex, new PlanetPosition(planetIndex, NatalChartService.calculatePlanetData(juldate, planetIndex)));
-            double planetLong = natalChart.getPlanetPositions().get(planetIndex).getLongitude();
-            for(int i =1; i<=12; i++){
-                if(i==12 || (planetLong>houseLongBegin[i] && planetLong<houseLongBegin[i+1])){
-                    natalChart.getPlanetPositions().get(planetIndex).setHouseNumber(i);
-                    break;
-                }
-            }
+            natalChart.getPlanetPositions().put(planetIndex, new PlanetPosition(planetIndex, NatalChartService.calculatePlanetData(juldate, planetIndex), houseLongBegin));
         }
+        natalChart.setHousePositionInZodiacSign();
+        natalChart.setAspectList();
         return natalChart;
     }
 }
