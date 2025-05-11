@@ -6,6 +6,7 @@ import java.time.LocalTime;
 public class UserData {
     private Long chatID;
     private String country;
+    private String country_code;
     private String city;
 
     private LocalDate birthDate;
@@ -15,9 +16,10 @@ public class UserData {
     private Double longitude;
     public UserData(){}
 
-    public UserData(Long chatID, String country, String city, LocalDate birthDate, LocalTime birthTime, Double latitude, Double longitude) {
+    public UserData(Long chatID, String country, String country_code, String city, LocalDate birthDate, LocalTime birthTime, Double latitude, Double longitude) {
         this.chatID = chatID;
         this.country = country;
+        this.country_code=country_code;
         this.city = city;
         this.birthDate = birthDate;
         this.birthTime = birthTime;
@@ -79,5 +81,13 @@ public class UserData {
 
     public void setLongitude(Double longitude) {
         this.longitude = longitude;
+    }
+
+    public String getCountry_code() {
+        return country_code;
+    }
+
+    public void setCountry_code(String country_code) {
+        this.country_code = country_code;
     }
 }

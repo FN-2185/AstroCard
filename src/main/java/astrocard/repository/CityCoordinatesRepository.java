@@ -18,4 +18,6 @@ public interface CityCoordinatesRepository extends JpaRepository<Cities, Long> {
         """, nativeQuery = true)
     Optional<Cities> findCityByCountryAndName(@Param("country") String country,
                                               @Param("cityName") String cityName);
+
+    
 }
