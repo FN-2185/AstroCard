@@ -1,4 +1,4 @@
-package astrocard.telegrambot;
+package astrocard.telegrambot.eventstate;
 
 public enum BotEvent {
     START_COMMAND,        // Пользователь ввёл /start
@@ -11,6 +11,12 @@ public enum BotEvent {
     ENTERED_CITY,         // Введён город
     ENTERED_DATE,         // Введена дата
     ENTERED_TIME,
+    NATAL_CHART_GET,
 
-    BACK_TO_START         // Возврат к приветствию из любого состояния
+    BACK_TO_START,         // Возврат к приветствию из любого состояния
+    SELECT_DESCRIPTION_PLANET_IN_SIGN_MENU,
+    SELECT_DESCRIPTION_PLANET_IN_HOUSE_MENU,
+    SELECT_PLANET,
+    BACK_TO_PLANETS_FROM_DESCRIPTION_OF_PLANET,
+    BACK_TO_NATAL_RESULT
 }

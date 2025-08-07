@@ -9,7 +9,7 @@ import java.util.Map;
 
 public class NatalChart {
     private Map<Integer, PlanetPosition> planetPositions;
-    private Map<Integer, ZodiacSign> housePositionInZodiacSign;
+    private Map<Integer, String> housePositionInZodiacSign;
     private List<Aspect> aspectList;
     private double[] houseCusps; // Cusp 1 to 12
     private double[] asmc;
@@ -62,14 +62,14 @@ public class NatalChart {
         this.asmc = asmc;
     }
 
-    public Map<Integer, ZodiacSign> getHousePositionInZodiacSign() {
+    public Map<Integer, String> getHousePositionInZodiacSign() {
         return housePositionInZodiacSign;
     }
 
     public void setHousePositionInZodiacSign() {
         for(int i =1; i<=12; i++){
-            this.housePositionInZodiacSign.put(i, ZodiacSign.fromInt((int) this.houseCusps[i] / 30));
-            //ZodiacSign.fromInt((int)this.houseCusps[i]/30).getName();
+            //this.housePositionInZodiacSign.put(i, ZodiacSign.fromInt((int) this.houseCusps[i] / 30));
+            this.housePositionInZodiacSign.put(i, ZodiacSign.fromInt((int)this.houseCusps[i]/30).getName());
         }
     }
 

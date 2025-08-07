@@ -1,5 +1,7 @@
 package astrocard.telegrambot;
 
+import astrocard.telegrambot.eventstate.BotEvent;
+import astrocard.telegrambot.eventstate.BotState;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.statemachine.StateMachine;
 import org.springframework.statemachine.config.StateMachineFactory;

@@ -20,10 +20,12 @@ public class PlanetPosition {
     private int minutesInSign;
     private int secondsInSign;
     private int houseNumber;
+    private String description;
     public PlanetPosition(){}
     public PlanetPosition(int planet_id, double[] xx, double[] houseCusps) {
         this.planet_id=planet_id;
-        this.planet_name= new  SwissEph().swe_get_planet_name(planet_id);
+        //this.planet_name= new  SwissEph().swe_get_planet_name(planet_id);
+        this.planet_name= CelestialObject.fromSwissephId(planet_id).getName();
         this.longitude = xx[0];
         this.latitude = xx[1];
         this.distance = xx[2];
@@ -134,5 +136,13 @@ public class PlanetPosition {
 
     public int getSecondsInSign() {
         return secondsInSign;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 }

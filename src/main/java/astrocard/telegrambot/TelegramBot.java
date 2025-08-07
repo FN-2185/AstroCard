@@ -1,12 +1,21 @@
 package astrocard.telegrambot;
 
-import astrocard.NatalChart;
-import astrocard.NatalChartService;
-import astrocard.PlanetPosition;
+import astrocard.CelestialObject;
 import astrocard.config.BotConfig;
 import astrocard.entity.Cities;
+import astrocard.entity.Descriptions;
 import astrocard.exception.InvalidCountryCityException;
 import astrocard.service.CityService;
+import astrocard.service.DescriptionSenderService;
+import astrocard.telegrambot.config.CacheConfig;
+import astrocard.telegrambot.eventstate.BotEvent;
+import astrocard.telegrambot.eventstate.BotState;
+import astrocard.telegrambot.natalchartsender.ChartSender;
+import astrocard.telegrambot.payload.NatalData;
+import astrocard.telegrambot.telegrambotmessagesender.TelegramBotMessageSender;
+import astrocard.telegrambot.verifiers.Verifier;
+import com.github.benmanes.caffeine.cache.Cache;
+import org.springframework.context.annotation.Import;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.statemachine.StateMachine;
 import org.springframework.stereotype.Component;
@@ -14,24 +23,16 @@ import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsumer;
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
-import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 import reactor.core.publisher.Mono;
-import swisseph.SweDate;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+@Import(CacheConfig.class)
 
 @Component
 public class TelegramBot implements SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
@@ -39,14 +40,21 @@ public class TelegramBot implements SpringLongPollingBot, LongPollingSingleThrea
     private final BotConfig botConfig;
     private final TelegramClient telegramClient;
     private StateMachineService stateMachineService;
+    private DescriptionSenderService descriptionSenderService;
+    
+    private final Cache<Long, NatalData> natalDataCache;
+    private final Cache<Long, List<Descriptions>> descriptionCache;
 
-    private final Map<Long, Map<String, String>> userInput = new ConcurrentHashMap<>();
-
-    public TelegramBot(BotConfig botConfig, StateMachineService stateMachineService, CityService cityService) {
+    public TelegramBot(BotConfig botConfig, StateMachineService stateMachineService,
+                       CityService cityService, DescriptionSenderService descriptionSenderService,
+                       Cache<Long, NatalData> natalDataCache, Cache<Long, List<Descriptions>> descriptionCache) {
         this.botConfig = botConfig;
         this.telegramClient = new OkHttpTelegramClient(getBotToken());
         this.stateMachineService=stateMachineService;
         this.cityService=cityService;
+        this.descriptionSenderService=descriptionSenderService;
+        this.natalDataCache=natalDataCache;
+        this.descriptionCache=descriptionCache;
     }
 
     @Override
@@ -61,226 +69,249 @@ public class TelegramBot implements SpringLongPollingBot, LongPollingSingleThrea
 
     @Override
     public void consume(Update update) {
-        BotState state;
         StateMachine<BotState, BotEvent> sm;
+        BotState state;
+        if(update.hasMessage() && update.getMessage().hasText() || update.hasCallbackQuery()){
+            long chatId = extractChatId(update);
+            if(natalDataCache.getIfPresent(chatId)==null){
+                Optional<NatalData> user = this.cityService.userExists(chatId);
+                if (user.isPresent()){
+                    natalDataCache.put(chatId, user.get());
+                    if(List.of(BotState.NATAL_RESULT, BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU,
+                            BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU, BotState.CHOOSE_PLANET).contains(user.get().getFsm())){
+                        descriptionCache.put(chatId, this.descriptionSenderService.getDescriptions(user.get()));
+                    }
+                }
+            }
+        }
+
+
+
         if (update.hasMessage() && update.getMessage().hasText()) {
             long chatId = update.getMessage().getChatId();
             String text = update.getMessage().getText();
-            try {
-                sm = stateMachineService.restoreStateMachine(chatId);
-                state = sm.getState().getId();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
+            sm = loadSM(chatId);
+            state = sm.getState().getId();
+            if(text.equals("/start") && List.of(BotState.NATAL_RESULT,
+                    BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU,
+                    BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU,
+                    BotState.CHOOSE_PLANET, BotState.FORECAST_CARD).contains(state)){
+                natalDataCache.put(chatId, this.cityService.userExists(chatId).get());
+                fire(sm, BotEvent.ENTERED_TIME, chatId);
+                this.descriptionCache.put(chatId, this.descriptionSenderService.getDescriptions(natalDataCache.getIfPresent(chatId)));
+                TelegramBotMessageSender.sendPlanetsSignsHousesMenuMessage(chatId, ChartSender.sendChart(natalDataCache.getIfPresent(chatId)), telegramClient, descriptionCache.getIfPresent(chatId));
             }
-            if (text.equals("/start")) {
+
+            else if (text.equals("/start")) {
                 sm.startReactively().block();
-                sm.sendEvent(Mono.just(MessageBuilder.withPayload(BotEvent.START_COMMAND).build())).blockLast();
-                sendMessage(chatId, "Привет! Выбери, с чего начать:");
-                try {
-                    stateMachineService.persistStateMachine(sm, chatId);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
+                fire(sm, BotEvent.START_COMMAND, chatId);
+                TelegramBotMessageSender.sendDefaultMessage(chatId, "Привет! Выбери, с чего начать:", telegramClient);
                 return;
             }
-            handleInput(chatId, text);
+            if(List.of(BotState.NATAL_COUNTRY, BotState.NATAL_CITY,
+                    BotState.NATAL_DATE, BotState.NATAL_TIME).contains(state)){
+                handleInput(chatId, text);
+            }
+            //handleInput(chatId, text);
         }
         else if (update.hasCallbackQuery()) {
             String callBackData = update.getCallbackQuery().getData();
             long chatId = update.getCallbackQuery().getMessage().getChatId();
-            try {
-                sm = stateMachineService.restoreStateMachine(chatId);
-                state = sm.getState().getId();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
+            sm = loadSM(chatId);
+            state = sm.getState().getId();
+
+            if(Objects.equals(callBackData, "NATAL_BUTTON") && state==BotState.CHOOSE_ACTION){
+                /*Optional<NatalData> natalData = this.cityService.userExists(chatId);
+                if(natalData.isPresent()){
+                    natalDataCache.put(chatId, natalData.get());
+                    fire(sm, BotEvent.ENTERED_TIME, chatId);
+                    this.descriptionCache.put(chatId, this.descriptionSenderService.getDescriptions(natalDataCache.getIfPresent(chatId)));
+                    TelegramBotMessageSender.sendPlanetsSignsHousesMenuMessage(chatId, ChartSender.sendChart(natalDataCache.getIfPresent(chatId)), telegramClient, descriptionCache.getIfPresent(chatId));
+                }else {*/
+                    fire(sm, BotEvent.SELECT_NATAL_CHART, chatId);
+                    natalDataCache.put(chatId, new NatalData());
+                    natalDataCache.getIfPresent(chatId).setChatID(chatId);
+                    TelegramBotMessageSender.sendDefaultMessage(chatId, "Введите страну рождения:",telegramClient);
+                //}
+            }
+            else if(Objects.equals(callBackData, "CANCEL_BUTTON")){
+                fire(sm, BotEvent.BACK_TO_START, chatId);
+                TelegramBotMessageSender.sendDefaultMessage(chatId, "Ввод данных отменён ❌",telegramClient);
+            }
+            else if(Objects.equals(callBackData, "PREDICT_BUTTON")){
+                LocalTime natalData = this.cityService.userExists(chatId).get().getTime();
+                if(natalData!=null){
+                    fire(sm, BotEvent.SELECT_FORECAST, chatId);
+                    TelegramBotMessageSender.sendForecastMessage(chatId, ChartSender.sendForecast(natalDataCache.getIfPresent(chatId)), telegramClient);
+                }
+                else {
+                    fire(sm, BotEvent.BACK_TO_START, chatId);
+                    TelegramBotMessageSender.sendDefaultMessage(chatId, "У вас нет карты", telegramClient);
+                }
+
             }
 
-            switch (callBackData) {
-                case "NATAL_BUTTON" -> {//когда нажимаю эту кнопку в любой момент дожен возвращаться к сюда
-                    sm.sendEvent(Mono.just(MessageBuilder.withPayload(BotEvent.SELECT_NATAL_CHART).build())).blockLast();
-                    userInput.put(chatId, new HashMap<>());
-                    sendMessage(chatId, "Введите страну рождения:");
-                    try {
-                        stateMachineService.persistStateMachine(sm, chatId);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-                case "CANCEL_BUTTON" -> {
-                    sm.sendEvent(Mono.just(MessageBuilder.withPayload(BotEvent.BACK_TO_START).build())).blockLast();
-                    sendMessage(chatId, "Ввод данных отменён ❌");
-                    try {
-                        stateMachineService.persistStateMachine(sm, chatId);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-                case "PREDICT_BUTTON" -> {
-                    sm.sendEvent(Mono.just(MessageBuilder.withPayload(BotEvent.SELECT_FORECAST).build())).blockLast();
-                    sendMessage(chatId, "У вас уже есть натальная карта? (введите Да или Нет)");
-                    try {
-                        stateMachineService.persistStateMachine(sm, chatId);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-                default -> sendMessage(chatId, "Неизвестная команда.");
+
+            else if(Objects.equals(callBackData, "PLANETS_IN_SIGNS_BUTTON") && state==BotState.NATAL_RESULT){
+                fire(sm, BotEvent.SELECT_DESCRIPTION_PLANET_IN_SIGN_MENU, chatId);
+                TelegramBotMessageSender.sendPlanetsInSignsMessage(chatId, "Выберите планету", telegramClient);
+            }
+            else if(Objects.equals(callBackData, "PLANETS_IN_HOUSES_BUTTON") && state==BotState.NATAL_RESULT){
+                fire(sm, BotEvent.SELECT_DESCRIPTION_PLANET_IN_HOUSE_MENU, chatId);
+                TelegramBotMessageSender.sendPlanetsInSignsMessage(chatId, "Выберите планету", telegramClient);
+            }
+            else if(Objects.equals(callBackData, "SUN") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state,CelestialObject.SUN.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "MOON") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state, CelestialObject.MOON.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "MERCURY") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state,CelestialObject.MERCURY.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "VENUS") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state,CelestialObject.VENUS.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "MARS") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state,CelestialObject.MARS.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "JUPITER") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state,CelestialObject.JUPITER.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "SATURN") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state,CelestialObject.SATURN.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "URANUS") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state,CelestialObject.URANUS.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "NEPTUNE") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state,CelestialObject.NEPTUNE.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "PLUTO") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state, CelestialObject.PLUTO.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "CHIRON") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state == BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU)){
+                fire(sm, BotEvent.SELECT_PLANET, chatId);
+                TelegramBotMessageSender.sendOnePlanetInSign(chatId, state,CelestialObject.CHIRON.getName(), descriptionCache.getIfPresent(chatId), telegramClient);
+            }
+            else if(Objects.equals(callBackData, "BACK_TO_PLANETS_FROM_DESCRIPTION_OF_PLANET") && state==BotState.CHOOSE_PLANET){
+                fire(sm, BotEvent.BACK_TO_PLANETS_FROM_DESCRIPTION_OF_PLANET ,chatId);
+                TelegramBotMessageSender.sendPlanetsInSignsMessage(chatId, "Выберите планету", telegramClient);
+            }
+            else if(Objects.equals(callBackData, "BACK_TO_NATAL_FROM_DESCRIPTION") && (state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_HOUSE_MENU || state==BotState.CHOOSE_DESCRIPTION_PLANET_IN_SIGN_MENU || state==BotState.CHOOSE_PLANET || state==BotState.FORECAST_CARD)){
+                fire(sm, BotEvent.BACK_TO_NATAL_RESULT ,chatId);
+                TelegramBotMessageSender.sendPlanetsSignsHousesMenuMessage(chatId, ChartSender.sendChart(natalDataCache.getIfPresent(chatId)), telegramClient, descriptionCache.getIfPresent(chatId));
+            }
+            else {
+                TelegramBotMessageSender.sendYesNoMessage(chatId, "Используйте кнопки последнего сообщения.", telegramClient);
             }
         }
     }
     private void handleInput(long chatId, String text) {
         BotState state;
         StateMachine<BotState, BotEvent> sm;
-        try {
-            sm = stateMachineService.restoreStateMachine(chatId);
-            state = sm.getState().getId();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-
+        sm = loadSM(chatId);
+        state = sm.getState().getId();
         switch (state) {
             case NATAL_COUNTRY -> {
                 try {
                     ArrayList<String> list= cityService.validateCountry(text);
                     String country = list.get(0);
                     String country_code = list.get(1);
-                    userInput.get(chatId).put("country", country);
-                    userInput.get(chatId).put("country_code", country_code);
-                    sm.sendEvent(Mono.just(MessageBuilder.withPayload(BotEvent.ENTERED_COUNTRY).build())).blockLast();
-                    sendMessage(chatId, "Введите город рождения:");
-                    stateMachineService.persistStateMachine(sm, chatId);
+                    natalDataCache.getIfPresent(chatId).setCountry(country);
+                    natalDataCache.getIfPresent(chatId).setCountryCode(country_code);
+                    fire(sm, BotEvent.ENTERED_COUNTRY, chatId);
+                    state = sm.getState().getId();
+                    this.cityService.saveUserCountry(chatId, country, state);
+                    TelegramBotMessageSender.sendDefaultMessage(chatId, "Введите город рождения:",telegramClient);
                 }catch (InvalidCountryCityException e) {
-                    sendMessage(chatId, "Error");
-                }
-                catch (Exception e) {
-                    throw new RuntimeException(e);
+                    TelegramBotMessageSender.sendDefaultMessage(chatId, "Error"+ e.getMessage(),telegramClient);
                 }
             }
             case NATAL_CITY -> {
-                Cities res = cityService.getCoordinatesByCityAndCountry(userInput.get(chatId).get("country") , text);
-                userInput.get(chatId).put("city", res.getName());
-                userInput.get(chatId).put("latitude",res.getLatitude().toString());
-                userInput.get(chatId).put("longitude", res.getLongitude().toString());
-                sm.sendEvent(Mono.just(MessageBuilder.withPayload(BotEvent.ENTERED_CITY).build())).blockLast();
-                sendMessage(chatId, "Введите дату рождения (дд.мм.гггг):");
                 try {
-                    stateMachineService.persistStateMachine(sm, chatId);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
+                    Cities res = cityService.getCoordinatesByCityAndCountry(natalDataCache.getIfPresent(chatId).getCountry(), text);
+                    natalDataCache.getIfPresent(chatId).setCity(res.getName());
+                    natalDataCache.getIfPresent(chatId).setLatitude(res.getLatitude());
+                    natalDataCache.getIfPresent(chatId).setLongitude(res.getLongitude());
+                    natalDataCache.getIfPresent(chatId).setTimezone(res.getTimezone());
+                    fire(sm, BotEvent.ENTERED_CITY, chatId);
+                    state = sm.getState().getId();
+                    this.cityService.saveUserCity(chatId, res.getName(), state);
+                    TelegramBotMessageSender.sendDefaultMessage(chatId, "Введите дату рождения (дд.мм.гггг):",telegramClient);
+                } catch (InvalidCountryCityException e) {
+                    TelegramBotMessageSender.sendDefaultMessage(chatId, e.getMessage(),telegramClient);
                 }
             }
             case NATAL_DATE -> {
-                userInput.get(chatId).put("date", text);
-                sm.sendEvent(Mono.just(MessageBuilder.withPayload(BotEvent.ENTERED_DATE).build())).blockLast();
-                sendMessage(chatId, "Введите время рождения (чч:мм):");
                 try {
-                    stateMachineService.persistStateMachine(sm, chatId);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
+                    LocalDate date = Verifier.isValidDate(text);
+                    natalDataCache.getIfPresent(chatId).setDate(date);
+                    fire(sm, BotEvent.ENTERED_DATE, chatId);
+                    state = sm.getState().getId();
+                    this.cityService.saveUserDate(chatId, date, state);
+                    TelegramBotMessageSender.sendDefaultMessage(chatId, "Введите время рождения (чч:мм):",telegramClient);
+
+                }catch (DateTimeParseException e){
+                    TelegramBotMessageSender.sendDefaultMessage(chatId, "Неверный формат даты",telegramClient);
                 }
             }
             case NATAL_TIME -> {
-                userInput.get(chatId).put("time", text);
-                sm.sendEvent(Mono.just(MessageBuilder.withPayload(BotEvent.ENTERED_TIME).build())).blockLast();
-                sendMessage(chatId, "Вот ваша натальная карта! "+userInput.get(chatId).get("country")+" "+userInput.get(chatId).get("city")
-                        +" "+userInput.get(chatId).get("longitude"));
-                sendMessage(chatId, "Что хотите сделать дальше?");
-                try {
-                    stateMachineService.persistStateMachine(sm, chatId);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
+                try{
+                    LocalTime time = Verifier.isValidTime(text);
+                    natalDataCache.getIfPresent(chatId).setTime(time);
+                    fire(sm, BotEvent.ENTERED_TIME, chatId);
+                    ZonedDateTime dateTime= Verifier.timeToUtc(natalDataCache.getIfPresent(chatId).getTimezone(), natalDataCache.getIfPresent(chatId).getDate(), natalDataCache.getIfPresent(chatId).getTime());
+                    natalDataCache.getIfPresent(chatId).setDate(dateTime.toLocalDate());
+                    natalDataCache.getIfPresent(chatId).setTime(dateTime.toLocalTime());
+                    this.descriptionCache.put(chatId, this.descriptionSenderService.getDescriptions(natalDataCache.getIfPresent(chatId)));
+                    TelegramBotMessageSender.sendPlanetsSignsHousesMenuMessage(chatId, ChartSender.sendChart(natalDataCache.getIfPresent(chatId)), telegramClient, descriptionCache.getIfPresent(chatId));
+                    state = sm.getState().getId();
+                    this.cityService.saveUserData(natalDataCache.getIfPresent(chatId), state);
+                }
+                catch (DateTimeParseException e){
+                    TelegramBotMessageSender.sendDefaultMessage(chatId, "Неверный формат времени",telegramClient);
                 }
             }
 
-            case FORECAST_CHECK_CARD -> {
-                if (text.equalsIgnoreCase("да")) {
-                    sm.sendEvent(Mono.just(MessageBuilder.withPayload(BotEvent.USER_HAS_CARD).build())).blockLast();
-                    sendMessage(chatId, "Функция прогноза в разработке 🔮");
-                    sendMessage(chatId, "Вернуться в главное меню:");
-                    try {
-                        stateMachineService.persistStateMachine(sm, chatId);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                } else {
-                    sm.sendEvent(Mono.just(MessageBuilder.withPayload(BotEvent.USER_HAS_NO_CARD).build())).blockLast();
-                    sendMessage(chatId, "Создадим натальную карту. Введите страну рождения:");
-                    try {
-                        stateMachineService.persistStateMachine(sm, chatId);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-            }
-            default -> sendMessage(chatId, "Пожалуйста, используйте кнопки меню.");
+            default -> TelegramBotMessageSender.sendDefaultMessage(chatId, "Пожалуйста, используйте кнопки меню.", telegramClient);
         }
     }
-    private void sendMessage(long chatId, String text) {
-        InlineKeyboardButton natalButton = new InlineKeyboardButton("Натальная карта");
-        natalButton.setCallbackData("NATAL_BUTTON");
-
-        InlineKeyboardButton predictButton = new InlineKeyboardButton("Прогноз");
-        predictButton.setCallbackData("PREDICT_BUTTON");
-
-        InlineKeyboardButton cancelButton = new InlineKeyboardButton("Отмена");
-        cancelButton.setCallbackData("CANCEL_BUTTON");
-
-        InlineKeyboardRow row = new InlineKeyboardRow();
-        row.add(natalButton);
-        row.add(predictButton);
-        row.add(cancelButton);
-
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(row));
-
-        SendMessage message = SendMessage.builder()
-                .chatId(chatId)
-                .text(text)
-                .replyMarkup(markup)
-                .parseMode("HTML")
-                .build();
+    private StateMachine<BotState,BotEvent> loadSM(long chatId) {
         try {
-            telegramClient.execute(message);
-        } catch (TelegramApiException e) {
-            e.printStackTrace();
+            return stateMachineService.restoreStateMachine(chatId);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
-
-
-
-
-/*
-    //перехват ошибок AOP
-    private void sendNatal(){
-    }
-
-
-    private StringBuilder getCard(NatalData data){
-
-        StringBuilder card = new StringBuilder();
-        card.append("<b>Натальная карта:</b>\n\n");
-        String country = translateCountryToEnglish(data.getCountry());
-        String city = data.getCity();
-        String[] parts = data.getDate().split("\\.");
-        int day = Integer.parseInt(parts[0]);
-        int month = Integer.parseInt(parts[1]);
-        int year = Integer.parseInt(parts[2]);
-        parts = data.getTime().split(":");
-        int hour = Integer.parseInt(parts[0]);
-        int minute = Integer.parseInt(parts[1]);
-        Cities cities= this.cityService.getCoordinatesByCityAndCountry(country, city);
-        double latitude = cities.getLatitude();
-        double longitude = cities.getLongitude();
-        SweDate sweDate = new SweDate(year, month,day, hour+(minute/60.0), SweDate.SE_GREG_CAL);
-        NatalChartService natalChartService = new NatalChartService();
-        NatalChart natalChart = natalChartService.generateNatalChart(sweDate.getJulDay(), latitude, longitude);
-        Map<Integer, PlanetPosition> map = natalChart.getPlanetPositions();
-        for (Map.Entry<Integer, PlanetPosition> entry : map.entrySet()) {
-            PlanetPosition pos = entry.getValue();
-            card.append("<b>").append(pos.getPlanet_name()).append("</b>: ")
-                    .append("<i>").append(pos.getSignName()).append("</i> ")
-                    .append(pos.getDegreesInSign()).append("° ")
-                    .append(pos.getMinutesInSign()).append("'\n");
+    private void persistSM(StateMachine<BotState, BotEvent> sm, long chatId) {
+        try {
+            stateMachineService.persistStateMachine(sm, chatId);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
-        return card;
-    }*/
+    }
+    private void fire(StateMachine<BotState,BotEvent> sm, BotEvent event, long chatId) {
+        sm.sendEvent(Mono.just(MessageBuilder.withPayload(event).build())).blockLast();
+        persistSM(sm, chatId);
+    }
+    public static Long extractChatId(Update update) {
+        if(update.hasCallbackQuery()) {
+            return update.getCallbackQuery().getMessage().getChatId();
+        }
+        else  {
+            return update.getMessage().getChatId();
+        }
+    }
 }
+

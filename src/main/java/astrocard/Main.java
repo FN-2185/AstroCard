@@ -14,13 +14,13 @@ public class Main {
         NatalChart natalChart = natalChartService.generateNatalChart(sweDate.getJulDay(), 55.7558, 37.6176);
         Map<Integer, PlanetPosition> map = natalChart.getPlanetPositions();
         for (Map.Entry<Integer, PlanetPosition> entry : map.entrySet()) {
-            System.out.println(entry.getValue().getPlanet_name()+ " Sign:"+ entry.getValue().getSignName()+" "+entry.getValue().getDegreesInSign()+
+            System.out.println(entry.getValue().getPlanet_name()+ " Знак: "+ entry.getValue().getSignName()+" "+entry.getValue().getDegreesInSign()+
                     " "+entry.getValue().getMinutesInSign()+" "+entry.getValue().getMinutesInSign()+
-                    " House:"+ entry.getValue().getHouseNumber()+" Speed:"+ entry.getValue().getSpeedLongitude());
+                    " Дом: "+ entry.getValue().getHouseNumber()+" Ретроградность:"+ entry.getValue().getSpeedLongitude());
         }
-        Map<Integer, ZodiacSign> map1 = natalChart.getHousePositionInZodiacSign();
-        for (Map.Entry<Integer, ZodiacSign> entry1: map1.entrySet()){
-            System.out.println(entry1.getKey()+ " Sign:"+ entry1.getValue());
+        Map<Integer, String> map1 = natalChart.getHousePositionInZodiacSign();
+        for (Map.Entry<Integer, String> entry1: map1.entrySet()){
+            System.out.println(entry1.getKey()+ " Знак:"+ entry1.getValue());
         }
         List<Aspect> list = natalChart.getAspectList();
         for (Aspect aspect : list){
