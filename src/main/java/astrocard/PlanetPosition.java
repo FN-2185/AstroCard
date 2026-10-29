@@ -1,148 +1,51 @@
 package astrocard;
 
-import swisseph.SwissEph;
 
-public class PlanetPosition {
-    private int planet_id;
-    private String planet_name;
+public final class PlanetPosition {
+    private final int planetId;
+    private final double[] values;
+    private final int houseNumber;
 
-    private double longitude;
-    private double latitude;
-    private double distance;
-
-
-    private double speedLongitude;
-    private double speedLatitude;
-    private double speedDistance;
-    private int signIndex;
-    private String signName;
-    private int degreesInSign;
-    private int minutesInSign;
-    private int secondsInSign;
-    private int houseNumber;
-    private String description;
-    public PlanetPosition(){}
-    public PlanetPosition(int planet_id, double[] xx, double[] houseCusps) {
-        this.planet_id=planet_id;
-        //this.planet_name= new  SwissEph().swe_get_planet_name(planet_id);
-        this.planet_name= CelestialObject.fromSwissephId(planet_id).getName();
-        this.longitude = xx[0];
-        this.latitude = xx[1];
-        this.distance = xx[2];
-        this.speedLongitude = xx[3];
-        this.speedLatitude = xx[4];
-        this.speedDistance = xx[5];
-        this.signIndex=(int)(longitude/30);
-        this.signName= ZodiacSign.fromInt(signIndex).getName();
-        this.degreesInSign = (int) (longitude % 30);
-        this.minutesInSign = (int) ((longitude % 1) * 60);
-        this.secondsInSign = (int) ((((longitude % 1) * 60) % 1) * 60);
-        for(int i =1; i<=12; i++){
-            if(i==12 || (this.longitude>houseCusps[i] && this.longitude<houseCusps[i+1])){
-                this.houseNumber=i;
-                break;
-            }
+    public PlanetPosition(int planetId, double[] values, double[] houseCusps) {
+        if (values == null || values.length != 6) throw new IllegalArgumentException("Six coordinates required");
+        for (double value : values) {
+            if (!Double.isFinite(value)) throw new IllegalArgumentException("Non-finite planet coordinate");
         }
+        CelestialObject.fromSwissephId(planetId);
+        this.planetId = planetId;
+        this.values = values.clone();
+        this.values[0] = normalize(values[0]);
+        this.houseNumber = locateHouse(this.values[0], houseCusps);
     }
 
-    public int getPlanet_id() {
-        return planet_id;
-    }
-    public double getLongitude() {
-        return longitude;
+    public static double normalize(double angle) {
+        if (!Double.isFinite(angle)) throw new IllegalArgumentException("Non-finite angle");
+        return ((angle % 360) + 360) % 360;
     }
 
-    public void setLongitude(double longitude) {
-        this.longitude = longitude;
+    public static int locateHouse(double longitude, double[] cusps) {
+        if (cusps == null || cusps.length != 13) throw new IllegalArgumentException("Twelve house cusps required");
+        double position = normalize(longitude);
+        for (int i = 1; i <= 12; i++) {
+            double start = normalize(cusps[i]);
+            double end = normalize(cusps[i == 12 ? 1 : i + 1]);
+            if (normalize(position - start) < normalize(end - start)) return i;
+        }
+        throw new IllegalArgumentException("Invalid house cusps");
     }
 
-    public double getLatitude() {
-        return latitude;
-    }
-
-    public void setLatitude(double latitude) {
-        this.latitude = latitude;
-    }
-
-    public double getDistance() {
-        return distance;
-    }
-
-    public void setDistance(double distance) {
-        this.distance = distance;
-    }
-
-    public double getSpeedLongitude() {
-        return speedLongitude;
-    }
-
-    public void setSpeedLongitude(double speedLongitude) {
-        this.speedLongitude = speedLongitude;
-    }
-
-    public double getSpeedLatitude() {
-        return speedLatitude;
-    }
-
-    public void setSpeedLatitude(double speedLatitude) {
-        this.speedLatitude = speedLatitude;
-    }
-
-    public double getSpeedDistance() {
-        return speedDistance;
-    }
-
-    public void setSpeedDistance(double speedDistance) {
-        this.speedDistance = speedDistance;
-    }
-
-    public int getSignIndex() {
-        return signIndex;
-    }
-
-    public void setSignIndex(int signIndex) {
-        this.signIndex = signIndex;
-    }
-
-    public int getHouseNumber() {
-        return houseNumber;
-    }
-
-    public void setHouseNumber(int houseNumber) {
-        this.houseNumber = houseNumber;
-    }
-    public void setPlanet_name(String planet_name) {
-        this.planet_name = planet_name;
-    }
-    public String getPlanet_name() {
-        return planet_name;
-    }
-
-    public String getSignName() {
-        return signName;
-    }
-
-    public void setSignName(String signName) {
-        this.signName = signName;
-    }
-
-    public int getDegreesInSign() {
-        return degreesInSign;
-    }
-
-    public int getMinutesInSign() {
-        return minutesInSign;
-    }
-
-    public int getSecondsInSign() {
-        return secondsInSign;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
+    public int getPlanet_id() { return planetId; }
+    public String getPlanet_name() { return CelestialObject.fromSwissephId(planetId).getName(); }
+    public double getLongitude() { return values[0]; }
+    public double getLatitude() { return values[1]; }
+    public double getDistance() { return values[2]; }
+    public double getSpeedLongitude() { return values[3]; }
+    public double getSpeedLatitude() { return values[4]; }
+    public double getSpeedDistance() { return values[5]; }
+    public int getSignIndex() { return (int) (getLongitude() / 30); }
+    public String getSignName() { return ZodiacSign.fromInt(getSignIndex()).getName(); }
+    public int getDegreesInSign() { return (int) (getLongitude() % 30); }
+    public int getMinutesInSign() { return (int) ((getLongitude() % 1) * 60); }
+    public int getSecondsInSign() { return (int) ((((getLongitude() % 1) * 60) % 1) * 60); }
+    public int getHouseNumber() { return houseNumber; }
 }

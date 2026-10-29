@@ -4,6 +4,7 @@ target/
 !**/src/test/**/target/
 
 ### IntelliJ IDEA ###
+.idea/
 .idea/modules.xml
 .idea/jarRepositories.xml
 .idea/compiler.xml
@@ -36,3 +37,25 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Local credentials and generated runtime data
+.env
+.env.*
+!.env.example
+*.log
+*.dump
+*.backup
+*.sql.gz
+!db/seed/Test.sql.gz
+postgres-data/
+.agents/
+.codex/
+
+# Publish only these project files and directories from the repository root.
+/*
+!/.gitignore
+!/pom.xml
+!/README.md
+!/src/
+!/ephemers/
+!/images/

@@ -2,21 +2,28 @@ package astrocard.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "countrycode")
 public class CountryCode {
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
-    private Long id;
-    @Column(name = "iso")
+    private Integer id;
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "iso", length = 2)
     private String iso;
-    @Column(name = "iso3")
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "iso3", length = 3)
     private String iso3;
     @Column(name = "iso_numeric")
-    private Long iso_numeric;
+    private Integer iso_numeric;
     @Column(name = "fips")
     private String fips;
     @Column(name = "country")
@@ -29,7 +36,7 @@ public class CountryCode {
     private String equivalent_fips_code;
     public CountryCode(){}
 
-    public CountryCode(Long id, String iso, String iso3, Long iso_numeric, String fips, String country, String tld, Long geonameid, String equivalent_fips_code) {
+    public CountryCode(Integer id, String iso, String iso3, Integer iso_numeric, String fips, String country, String tld, Long geonameid, String equivalent_fips_code) {
         this.id = id;
         this.iso = iso;
         this.iso3 = iso3;
@@ -41,11 +48,11 @@ public class CountryCode {
         this.equivalent_fips_code = equivalent_fips_code;
     }
 
-    public Long getId() {
+    public Integer getId() {
         return id;
     }
 
-    public void setId(Long id) {
+    public void setId(Integer id) {
         this.id = id;
     }
 
@@ -65,11 +72,11 @@ public class CountryCode {
         this.iso3 = iso3;
     }
 
-    public Long getIso_numeric() {
+    public Integer getIso_numeric() {
         return iso_numeric;
     }
 
-    public void setIso_numeric(Long iso_numeric) {
+    public void setIso_numeric(Integer iso_numeric) {
         this.iso_numeric = iso_numeric;
     }
 

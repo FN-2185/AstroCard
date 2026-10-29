@@ -1,30 +1,15 @@
 package astrocard;
-import swisseph.SweDate;
-import swisseph.SwissEph;
-import java.time.*;
-import java.time.zone.ZoneRulesProvider;
-import java.util.List;
-import java.util.Map;
-import java.util.TimeZone;
+
+import astrocard.chart.ChartRequest;
+import astrocard.chart.SwissEphemerisAdapter;
+import astrocard.telegrambot.natalchartsender.ChartSender;
+import java.time.Instant;
+
 
 public class Main {
     public static void main(String[] args) {
-        SweDate sweDate = new SweDate(2001, 10,11, 22+(55.0/60), SweDate.SE_GREG_CAL);
-        NatalChartService natalChartService = new NatalChartService();
-        NatalChart natalChart = natalChartService.generateNatalChart(sweDate.getJulDay(), 55.7558, 37.6176);
-        Map<Integer, PlanetPosition> map = natalChart.getPlanetPositions();
-        for (Map.Entry<Integer, PlanetPosition> entry : map.entrySet()) {
-            System.out.println(entry.getValue().getPlanet_name()+ " Знак: "+ entry.getValue().getSignName()+" "+entry.getValue().getDegreesInSign()+
-                    " "+entry.getValue().getMinutesInSign()+" "+entry.getValue().getMinutesInSign()+
-                    " Дом: "+ entry.getValue().getHouseNumber()+" Ретроградность:"+ entry.getValue().getSpeedLongitude());
-        }
-        Map<Integer, String> map1 = natalChart.getHousePositionInZodiacSign();
-        for (Map.Entry<Integer, String> entry1: map1.entrySet()){
-            System.out.println(entry1.getKey()+ " Знак:"+ entry1.getValue());
-        }
-        List<Aspect> list = natalChart.getAspectList();
-        for (Aspect aspect : list){
-            System.out.println(aspect.getFirstPlanetId()+" "+aspect.getSecondPlanetId()+" "+ aspect.getAngle());
-        }
+        NatalChart chart = new SwissEphemerisAdapter("./ephemers").calculate(
+                new ChartRequest(Instant.parse("2008-10-11T19:55:00Z"), 55.7558, 37.6176));
+        System.out.println(new ChartSender().render(chart, "Натальная карта"));
     }
 }

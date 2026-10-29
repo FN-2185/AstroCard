@@ -1,36 +1,17 @@
 package astrocard.config;
 
-import astrocard.telegrambot.TelegramBot;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.PropertySource;
-
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.*;
+import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
+import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 @Configuration
-@PropertySource("file:C:\\Users\\Niko\\Desktop\\Projects\\AstroCard\\src\\main\\resources\\application.properties")
 public class BotConfig {
-    @Value("${bot.name}")
-    String botName;
-    @Value("${bot.token}")
-    String token;
-
-    public BotConfig() {}
-
-    public String getBotName() {
-        return botName;
-    }
-
-    public void setBotName(String botName) {
-        this.botName = botName;
-    }
-
-    public String getToken() {
-        return token;
-    }
-
-    public void setToken(String token) {
-        this.token = token;
+    @Bean
+    @ConditionalOnProperty(name = "bot.enabled", havingValue = "true", matchIfMissing = true)
+    public TelegramClient telegramClient(@Value("${bot.token:}") String token) {
+        if (token.isBlank()) throw new IllegalStateException("Set TELEGRAM_BOT_TOKEN before starting the bot");
+        return new OkHttpTelegramClient(token);
     }
 }

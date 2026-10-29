@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.Instant;
 
 
 @Entity
@@ -30,6 +31,17 @@ public class UserData {
     @Column(name = "fsm")
     @Enumerated(EnumType.STRING)
     private BotState fsm;
+    @Column(name = "timezone")
+    private String timezone;
+    @Column(name = "birth_instant")
+    private Instant birthInstant;
+    @Version
+    private Long version;
+
+    public String getTimezone() { return timezone; }
+    public void setTimezone(String timezone) { this.timezone = timezone; }
+    public Instant getBirthInstant() { return birthInstant; }
+    public void setBirthInstant(Instant birthInstant) { this.birthInstant = birthInstant; }
     public UserData(){}
 
     public UserData(Long chatID, BotState fsm){

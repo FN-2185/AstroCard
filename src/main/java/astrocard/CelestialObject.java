@@ -13,7 +13,7 @@ public enum CelestialObject {
     PLUTO(SweConst.SE_PLUTO, "Плутон"),
     CHIRON(SweConst.SE_CHIRON, "Хирон");
     //MEAN_APOGEE(SweConst.SE_MEAN_APOG, "Черная Луна");
-    //WHITE_MOON(SweConst.SE_WHITE_MOON, "Белая Луна"); // неофициальное, если ты его используешь
+    //WHITE_MOON(SweConst.SE_WHITE_MOON, "Белая Луна");
 
     private final int swissephId;
     private final String name;

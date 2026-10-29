@@ -1,48 +1,38 @@
 package astrocard.telegrambot.verifiers;
 
 import java.time.*;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.time.format.ResolverStyle;
-import java.time.zone.ZoneRules;
+import java.time.format.*;
+import java.util.List;
 
-public class Verifier {
-    public static ZonedDateTime timeToUtc(String timezone, LocalDate date, LocalTime time){
-        /*DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy");
-        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
-        LocalDate localDate = LocalDate.parse(date, dateFormatter);
-        LocalTime localTime = LocalTime.parse(time, timeFormatter);*/
-        ZoneId zoneId = ZoneId.of(timezone);
+public final class Verifier {
+    private Verifier() {}
+    public record BirthMoment(LocalTime localTime, Instant instant) {}
 
-        LocalDateTime localDateTime = LocalDateTime.of(date, time);
-        ZonedDateTime zonedDateTime = localDateTime.atZone(zoneId);
-        ZoneRules rules = zoneId.getRules();
-
-        boolean isDst = rules.isDaylightSavings(zonedDateTime.toInstant());
-        ZoneOffset offset = zonedDateTime.getOffset();
-
-        return zonedDateTime.withZoneSameInstant(ZoneOffset.UTC);
-    }
-    /*
-    public static String dateVerifier(String date){
-        String[] parts = date.split("\\.");
-    }*/
     public static LocalDate isValidDate(String input) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.uuuu")
-                .withResolverStyle(ResolverStyle.STRICT); // строгая проверка
-        try {
-            return LocalDate.parse(input, formatter);
-        } catch (DateTimeParseException e) {
-            throw e;
-        }
+        return LocalDate.parse(input.trim(), DateTimeFormatter.ofPattern("dd.MM.uuuu")
+                .withResolverStyle(ResolverStyle.STRICT));
     }
-    public static LocalTime isValidTime(String input){
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm")
-                .withResolverStyle(ResolverStyle.STRICT);
-        try {
-            return LocalTime.parse(input, formatter);
-        }catch (DateTimeParseException e){
-            throw e;
-        }
+    public static LocalTime isValidTime(String input) {
+        return LocalTime.parse(input.trim(), DateTimeFormatter.ofPattern("HH:mm")
+                .withResolverStyle(ResolverStyle.STRICT));
+    }
+
+    public static BirthMoment resolveBirthTime(String timezone, LocalDate date, String input) {
+        String[] parts = input.trim().split("\\s+");
+        if (parts.length > 2) throw new IllegalArgumentException("Введите время в формате ЧЧ:ММ.");
+        LocalTime time = isValidTime(parts[0]);
+        LocalDateTime local = LocalDateTime.of(date, time);
+        List<ZoneOffset> offsets = ZoneId.of(timezone).getRules().getValidOffsets(local);
+        if (offsets.isEmpty()) throw new IllegalArgumentException(
+                "Такого местного времени не существовало из-за перевода часов. Проверьте время рождения.");
+        if (parts.length == 1 && offsets.size() > 1) throw new IllegalArgumentException(
+                "Время неоднозначно из-за перевода часов. Укажите одно из смещений " + offsets + ", например: " + input + " " + offsets.get(0));
+        ZoneOffset selected = parts.length == 2 ? ZoneOffset.of(parts[1]) : offsets.get(0);
+        if (!offsets.contains(selected)) throw new IllegalArgumentException("Смещение не соответствует часовому поясу города.");
+        return new BirthMoment(time, local.toInstant(selected));
+    }
+
+    public static ZonedDateTime timeToUtc(String timezone, LocalDate date, LocalTime time) {
+        return resolveBirthTime(timezone, date, time.toString()).instant().atZone(ZoneOffset.UTC);
     }
 }
